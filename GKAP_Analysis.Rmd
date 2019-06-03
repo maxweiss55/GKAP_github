@@ -386,6 +386,7 @@ leg11 %>%
   bind_rows(leg17) %>%
   group_by(Year) %>%
   count(Coded_Legal) %>%
+  filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
   mutate(`Relative Frequency` = n/sum(n)) %>%
   ggplot(aes(x = Coded_Legal, y = `Relative Frequency`, fill = Year)) +
   geom_col(position = 'dodge') +
@@ -409,6 +410,7 @@ label11 %>%
   bind_rows(label17) %>%
   group_by(Year) %>%
   count(Coded_Medical) %>%
+  filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
   mutate(`Relative Frequency` = n/sum(n)) %>%
   ggplot(aes(x = Coded_Medical, y = `Relative Frequency`, fill = Year)) +
   geom_col(position = 'dodge') +
@@ -420,6 +422,7 @@ label11 %>%
 #Average Favorability by Class
 
 calc11 %>%
+  filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
   group_by(Coded_Legal) %>%
   summarise(Favorability = mean(Response_Legal, na.rm = TRUE), 
             sd = sd(Response_Legal, na.rm = TRUE),
@@ -432,6 +435,7 @@ calc11 %>%
   scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
 
 calc17 %>%
+  filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
   group_by(Coded_Legal) %>%
   summarise(Favorability = mean(Response_Legal, na.rm = TRUE), 
             sd = sd(Response_Legal, na.rm = TRUE),
@@ -473,6 +477,7 @@ gather17_2 <- gather17 %>%
   mutate(Response_Medical = parse_integer(Response_Medical))
 
 gather11_2 %>%
+  filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
   group_by(Coded_Medical) %>%
   summarise(Favorability = mean(Response_Medical, na.rm = TRUE), 
             sd = sd(Response_Medical, na.rm = TRUE),
@@ -481,10 +486,11 @@ gather11_2 %>%
   geom_col(position = "dodge", fill = "royalblue4") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Medical 2017", caption = "CAPTION CAPTION CAPTION") +
+  labs(title = "Average Favorability Score Medical 2011", caption = "CAPTION CAPTION CAPTION") +
   scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
 
 gather17_2 %>%
+  filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
   group_by(Coded_Medical) %>%
   summarise(Favorability = mean(Response_Medical, na.rm = TRUE), 
             sd = sd(Response_Medical, na.rm = TRUE),
@@ -500,6 +506,35 @@ gather17_2 %>%
 ```
 
 
+```{r ANALYSIS}
 
+agg11 <- calc11 %>%
+  mutate(Year = '2011') %>%
+  rename_all(toupper)
+  
+agg <- calc17 %>% 
+  mutate(Year = '2017') %>%
+  rename_all(toupper) %>%
+  bind_rows(agg11)
+
+#Average Favorability Score by PARTY ID
+
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(partyid7 = case_when(PARTYID7 == 1 ~ "1 - Strong Republican", 
+                           PARTYID7 == 7 ~ "7 - Strong Democrat",
+                           TRUE ~ as.character(PARTYID7))) %>%
+  group_by(PARTYID7, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PARTYID7, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Favorability Score by Party ID", caption = "Important Note: A higher ordinal value denotes less willingness to contribute to a DNA to a biobank") +
+  ylab("Average Disfavorability")
+
+
+```
 
 
