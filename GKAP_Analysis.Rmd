@@ -506,23 +506,70 @@ gather17_2 %>%
 ```
 
 
-```{r ANALYSIS}
+```{r Build Aggregate Dataset}
 
 agg11 <- calc11 %>%
   mutate(Year = '2011') %>%
+  mutate(party = pppa0012) %>%
   rename_all(toupper)
   
 agg <- calc17 %>% 
   mutate(Year = '2017') %>%
+  mutate(party = ppp10012) %>%
   rename_all(toupper) %>%
   bind_rows(agg11)
 
-#Average Favorability Score by PARTY ID
+agg %>% select()
 
+```
+
+
+```{r POLITICS}
+#Average Favorability Score by Political Ideology
+
+#MEDICAL
 agg %>%
   filter(!is.na(RESPONSE_MEDICAL)) %>%
-  mutate(partyid7 = case_when(PARTYID7 == 1 ~ "1 - Strong Republican", 
-                           PARTYID7 == 7 ~ "7 - Strong Democrat",
+  filter(PARTY != -1, PARTY != -2) %>%
+  mutate(PARTY = case_when(PARTY == 1 ~ "1 - Extremely Liberal", 
+                           PARTY == 7 ~ "7 - Extremely Conservative",
+                           TRUE ~ as.character(PARTY))) %>%
+  group_by(PARTY, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PARTY, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Political Ideology", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  filter(PARTY != -1, PARTY != -2) %>%
+  mutate(PARTY = case_when(PARTY == 1 ~ "1 - Extremely Liberal", 
+                           PARTY == 7 ~ "7 - Extremely Conservative",
+                           TRUE ~ as.character(PARTY))) %>%
+  group_by(PARTY, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PARTY, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Political Ideology", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+
+#Average Favorability Score by Party ID
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  filter(PARTYID7 != -1, PARTYID7 != -2) %>%
+  mutate(PARTYID7 = case_when(PARTYID7 == 1 ~ "1 - Strongly Republican", 
+                           PARTYID7 == 7 ~ "7 - Strongly Democrat",
                            TRUE ~ as.character(PARTYID7))) %>%
   group_by(PARTYID7, YEAR) %>%
   summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
@@ -531,10 +578,417 @@ agg %>%
   facet_grid(~YEAR) +
   geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score by Party ID", caption = "Important Note: A higher ordinal value denotes less willingness to contribute to a DNA to a biobank") +
-  ylab("Average Disfavorability")
+  labs(title = "Average Medical Favorability Score by Party ID", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  filter(PARTYID7 != -1, PARTYID7 != -2) %>%
+  mutate(PARTYID7 = case_when(PARTYID7 == 1 ~ "1 - Strongly Republican", 
+                           PARTYID7 == 7 ~ "7 - Strongly Democrat",
+                           TRUE ~ as.character(PARTYID7))) %>%
+  group_by(PARTYID7, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PARTYID7, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Party ID", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+
+#Average Favorability Score by Candidate
+
+#MEDICAL 2017
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  filter(PPPA1690 %in% c(1, 2)) %>%
+  mutate(PPPA1690 = case_when(PPPA1690 == 1 ~ "Clinton", 
+                           PPPA1690 == 2 ~ "Trump")) %>%
+  group_by(PPPA1690, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPPA1690, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Candidate 2017", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL 2017
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  filter(PPPA1690 %in% c(1, 2)) %>%
+  mutate(PPPA1690 = case_when(PPPA1690 == 1 ~ "Clinton", 
+                           PPPA1690 == 2 ~ "Trump")) %>%
+  group_by(PPPA1690, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPPA1690, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Candidate 2017", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+```
+
+```{r RACE/ETHNICITY}
+
+#Average Favorability Score by Race/Ethnicity
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPETHM = case_when(PPETHM == 1 ~ "White, Non-Hispanic", 
+                            PPETHM == 2 ~ "Black, Non-Hispanic", 
+                            PPETHM == 3 ~ "Other, Non-Hispanic", 
+                            PPETHM == 4 ~ "Hispanic",
+                            PPETHM == 5 ~ "2+ Races, Non-Hispanic")) %>%
+  group_by(PPETHM, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPETHM, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Ethnicity", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPETHM = case_when(PPETHM == 1 ~ "White, Non-Hispanic", 
+                            PPETHM == 2 ~ "Black, Non-Hispanic", 
+                            PPETHM == 3 ~ "Other, Non-Hispanic", 
+                            PPETHM == 4 ~ "Hispanic",
+                            PPETHM == 5 ~ "2+ Races, Non-Hispanic")) %>%
+  group_by(PPETHM, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPETHM, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Ethnicity", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+```
+
+```{r AGE}
+
+#Average Favorability Score by AGE
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  ggplot(aes(x = PPAGE, y = RESPONSE_LEGAL)) +
+  geom_jitter(alpha = .8) +
+  geom_smooth(method = 'lm', se = FALSE) +
+  geom_smooth(aes(color = "red")) +
+  facet_grid(~YEAR) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Age", caption = "") +
+  ylab("Average Favorability") +
+  xlab("Age")
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  ggplot(aes(x = PPAGE, y = RESPONSE_LEGAL)) +
+  geom_jitter(alpha = .8) +
+  geom_smooth(method = 'lm', se = FALSE) +
+  geom_smooth(aes(color = "red")) +
+  facet_grid(~YEAR) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Age", caption = "") +
+  ylab("Average Favorability") +
+  xlab("Age")
+
+
+#Average Favorability Score by Age
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPAGECAT = case_when(PPAGECAT == 1 ~ "18-24", 
+                           PPAGECAT == 2 ~ "25-34", 
+                           PPAGECAT == 3 ~ "35-44",
+                           PPAGECAT == 4 ~ "45-54",
+                           PPAGECAT == 5 ~ "55-64",
+                           PPAGECAT == 6 ~ "65-74",
+                           PPAGECAT == 7 ~ "75+")) %>%
+  group_by(PPAGECAT, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPAGECAT, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Age", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPAGECAT = case_when(PPAGECAT == 1 ~ "18-24", 
+                           PPAGECAT == 2 ~ "25-34", 
+                           PPAGECAT == 3 ~ "35-44",
+                           PPAGECAT == 4 ~ "45-54",
+                           PPAGECAT == 5 ~ "55-64",
+                           PPAGECAT == 6 ~ "65-74",
+                           PPAGECAT == 7 ~ "75+")) %>%
+  group_by(PPAGECAT, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPAGECAT, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Age", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
 
 
 ```
 
+```{r GENDER}
+
+#Average Favorability Score by GENDER
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPGENDER = case_when(PPGENDER == 1 ~ "Male", 
+                           PPGENDER == 2 ~ "Female")) %>%
+  group_by(PPGENDER, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPGENDER, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Gender", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPGENDER = case_when(PPGENDER == 1 ~ "Male", 
+                           PPGENDER == 2 ~ "Female")) %>%
+  group_by(PPGENDER, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPGENDER, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Gender", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+```
+
+```{r INCOME}
+
+#Average Favorability Score by INCOME
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPINCIMP = case_when(PPINCIMP == 1 ~ 'Less than $5,000',
+                              PPINCIMP == 2 ~ '$5,000 to $7,499',
+                              PPINCIMP == 3 ~ '$7,500 to $9,999',
+                              PPINCIMP == 4 ~ '$10,000 to $12,499',
+                              PPINCIMP == 5 ~ '$12,500 to $14,999',
+                              PPINCIMP == 6 ~ '$15,000 to $19,999',
+                              PPINCIMP == 7 ~ '$20,000 to $24,999',
+                              PPINCIMP == 8 ~ '$25,000 to $29,999',
+                              PPINCIMP == 9 ~ '$30,000 to $34,999',
+                              PPINCIMP == 10 ~ '$35,000 to $39,999',
+                              PPINCIMP == 11 ~ '$40,000 to $49,999',
+                              PPINCIMP == 12 ~ '$50,000 to $59,999',
+                              PPINCIMP == 13 ~ '$60,000 to $74,999',
+                              PPINCIMP == 14 ~ '$75,000 to $84,999',
+                              PPINCIMP == 15 ~ '$85,000 to $99,999',
+                              PPINCIMP == 16 ~ '$100,000 to $124,999',
+                              PPINCIMP == 17 ~ '$125,000 to $149,999',
+                              PPINCIMP == 18 ~ '$150,000 to $174,999',
+                              PPINCIMP == 19 ~ '$175,000 to $199,999',
+                              PPINCIMP == 20 ~ '$175,000 to $199,999',
+                              PPINCIMP == 21 ~ '$175,000 to $199,999')) %>%
+    mutate(PPINCIMP = fct_relevel(PPINCIMP, 'Less than $5,000',
+                                          '$5,000 to $7,499',
+                                          '$7,500 to $9,999',
+                                          '$10,000 to $12,499',
+                                          '$12,500 to $14,999',
+                                          '$15,000 to $19,999',
+                                          '$20,000 to $24,999',
+                                          '$25,000 to $29,999',
+                                          '$30,000 to $34,999',
+                                          '$35,000 to $39,999',
+                                          '$40,000 to $49,999',
+                                          '$50,000 to $59,999',
+                                          '$60,000 to $74,999',
+                                          '$75,000 to $84,999',
+                                          '$85,000 to $99,999',
+                                          '$100,000 to $124,999',
+                                          '$125,000 to $149,999',
+                                          '$150,000 to $174,999',
+                                          '$175,000 to $199,999')) %>%
+  group_by(PPINCIMP, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPINCIMP, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Income", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPINCIMP = case_when(PPINCIMP == 1 ~ 'Less than $5,000',
+                              PPINCIMP == 2 ~ '$5,000 to $7,499',
+                              PPINCIMP == 3 ~ '$7,500 to $9,999',
+                              PPINCIMP == 4 ~ '$10,000 to $12,499',
+                              PPINCIMP == 5 ~ '$12,500 to $14,999',
+                              PPINCIMP == 6 ~ '$15,000 to $19,999',
+                              PPINCIMP == 7 ~ '$20,000 to $24,999',
+                              PPINCIMP == 8 ~ '$25,000 to $29,999',
+                              PPINCIMP == 9 ~ '$30,000 to $34,999',
+                              PPINCIMP == 10 ~ '$35,000 to $39,999',
+                              PPINCIMP == 11 ~ '$40,000 to $49,999',
+                              PPINCIMP == 12 ~ '$50,000 to $59,999',
+                              PPINCIMP == 13 ~ '$60,000 to $74,999',
+                              PPINCIMP == 14 ~ '$75,000 to $84,999',
+                              PPINCIMP == 15 ~ '$85,000 to $99,999',
+                              PPINCIMP == 16 ~ '$100,000 to $124,999',
+                              PPINCIMP == 17 ~ '$125,000 to $149,999',
+                              PPINCIMP == 18 ~ '$150,000 to $174,999',
+                              PPINCIMP == 19 ~ '$175,000 to $199,999',
+                              PPINCIMP == 20 ~ '$175,000 to $199,999',
+                              PPINCIMP == 21 ~ '$175,000 to $199,999')) %>%
+  mutate(PPINCIMP = fct_relevel(PPINCIMP, 'Less than $5,000',
+                                          '$5,000 to $7,499',
+                                          '$7,500 to $9,999',
+                                          '$10,000 to $12,499',
+                                          '$12,500 to $14,999',
+                                          '$15,000 to $19,999',
+                                          '$20,000 to $24,999',
+                                          '$25,000 to $29,999',
+                                          '$30,000 to $34,999',
+                                          '$35,000 to $39,999',
+                                          '$40,000 to $49,999',
+                                          '$50,000 to $59,999',
+                                          '$60,000 to $74,999',
+                                          '$75,000 to $84,999',
+                                          '$85,000 to $99,999',
+                                          '$100,000 to $124,999',
+                                          '$125,000 to $149,999',
+                                          '$150,000 to $174,999',
+                                          '$175,000 to $199,999')) %>%
+  group_by(PPINCIMP, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPINCIMP, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Income", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+```
+
+
+```{r EDUCATION}
+
+#Average Favorability Score by EDUCATION
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPEDUCAT = case_when(PPEDUCAT == 1 ~ "Less than High School", 
+                           PPEDUCAT == 2 ~ "High School", 
+                           PPEDUCAT == 3 ~ "Some College",
+                           PPEDUCAT == 4 ~ "Bachelor's Degree or Higher")) %>%
+  mutate(PPEDUCAT = fct_relevel(PPEDUCAT, "Less than High School", 
+                                          "High School", 
+                                          "Some College",
+                                          "Bachelor's Degree or Higher")) %>%
+  group_by(PPEDUCAT, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPEDUCAT, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Education", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPEDUCAT = case_when(PPEDUCAT == 1 ~ "Less than High School", 
+                           PPEDUCAT == 2 ~ "High School", 
+                           PPEDUCAT == 3 ~ "Some College",
+                           PPEDUCAT == 4 ~ "Bachelor's Degree or Higher")) %>%
+  mutate(PPEDUCAT = fct_relevel(PPEDUCAT, "Less than High School", 
+                                          "High School", 
+                                          "Some College",
+                                          "Bachelor's Degree or Higher")) %>%
+  group_by(PPEDUCAT, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPEDUCAT, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Education", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+
+
+#MEDICAL
+agg %>%
+  filter(!is.na(RESPONSE_MEDICAL)) %>%
+  mutate(PPEDUC = case_when(PPEDUC %in% c(1:8) ~ "1 - Less than High School", 
+                           PPEDUC == 9 ~ "2 - High School", 
+                           PPEDUC == 10 ~ "3 - Some College",
+                           PPEDUC == 11 ~ "4 - Associate Degree",
+                           PPEDUC == 12 ~ "5 - Bachelor's Degree",
+                           PPEDUC == 13 ~ "6 - Master's Degree",
+                           PPEDUC == 14 ~ "7 - Professional Degree")) %>%
+  group_by(PPEDUC, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPEDUC, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Medical Favorability Score by Education", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+#LEGAL
+agg %>%
+  filter(!is.na(RESPONSE_LEGAL)) %>%
+  mutate(PPEDUC = case_when(PPEDUC %in% c(1:8) ~ "1 - Less than High School", 
+                           PPEDUC == 9 ~ "2 - High School", 
+                           PPEDUC == 10 ~ "3 - Some College",
+                           PPEDUC == 11 ~ "4 - Associate Degree",
+                           PPEDUC == 12 ~ "5 - Bachelor's Degree",
+                           PPEDUC == 13 ~ "6 - Master's Degree",
+                           PPEDUC == 14 ~ "7 - Professional Degree")) %>%
+  group_by(PPEDUC, YEAR) %>%
+  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
+  ggplot(aes(x = PPEDUC, y = `Average Favorability`)) +
+  geom_col() +
+  facet_grid(~YEAR) +
+  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Legal Favorability Score by Education", caption = "CAPTION CAPTION") +
+  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+
+```
 
