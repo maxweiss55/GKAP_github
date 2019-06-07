@@ -1,12 +1,17 @@
 ---
 title: "GKAP Analysis"
 author: "Max Weiss"
-date: "6/1/2018"
-output: html_document
+date: "6/6/2018"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    gallery: false
+    highlight: tango
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, output = FALSE, message = FALSE, warning = FALSE)
+```{r setup, include = FALSE, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
 
 #Library Downloads
 
@@ -17,7 +22,6 @@ library(maps)
 library(mapdata)
 library(stringr)
 library(lubridate)
-library(knitr)
 library(tidytext)
 library(plotly)
 library(SnowballC)
@@ -25,16 +29,38 @@ library(wordcloud)
 library(RColorBrewer)
 library(tm)
 library(readxl)
+library(infer)
 
 ```
 
-```{r data load and cleaning 2011}
+```{r Data load and cleaning 2011, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Load GKAP2011_Agg.csv, a CSV containing the entire GKAP-1 (2011) survey AND the Open Ended Response Classifications (See columns 2-8; 3rd-9th columns for relevant Legal and Medical classification). Save as gkap11.
 
 gkap11 <- read_csv("GKAP2011_Agg.csv")
 
+#Columns added:
+##Response_Legal - Close-ended response to question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future investigations to determine a person’s guilt or innocence of a particular crime?"
+##OpenEnd_Legal - Follow-up open-ended response to Response_Legal question with "Why [would/wouldn't] you be willing to?"
+##Coded_Legal - The classification coded for the OpenEnd_Legal response
+##Response_Medical - Close-ended response to question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future scientific or medical research?"
+##OpenEnd_Medical - Follow-up open-ended response to Response_Medical question with "Why [would/wouldn't] you be willing to?"
+##Coded_Medical_A - The first classification coded for the OpenEnd_Medical response
+##Coded_Medical_B - The second classification coded for the OpenEnd_Medical response
+
+#Note: There is no difference in importance between Coded_Medical_A and Coded_Medical_B, and many responses were not given a second (Coded_Medical_B) classification. Additionally, there is no Coded_Legal_A/Coded_Legal_B because only one classification was given for each legal response
+
+
+#Clean GKAP2011 to contain consistent variables and factors standardized across both years.
+#Save cleaned dataframe as clean11.
+
 clean11 <- gkap11 %>%
-  mutate(Response_Legal = Q48B, Response_Medical = Q44A) %>% #Standardize back to original values
-  mutate(Coded_Legal = case_when(is.na(Coded_Legal) ~"NA",
+  
+  #Standardize close-ended legal responses to original survey values
+  mutate(Response_Legal = Q48B, Response_Medical = Q44A) %>%
+  
+  #Standardize legal classifications to match 2017 factors
+  mutate(Coded_Legal = case_when(is.na(Coded_Legal) ~ "NA",
                                  Coded_Legal == "ind. no" ~ "indeterminate unwilling",
                                  Coded_Legal == "ind. yes" ~ "indeterminate willing",
                                  Coded_Legal == "NMI" ~ "need more information",
@@ -53,6 +79,8 @@ clean11 <- gkap11 %>%
                                  Coded_Legal == "value-y: research" ~ "research",
                                  Coded_Legal == "value-y: truth" ~ "truth",
                                  TRUE ~ Coded_Legal)) %>%
+  
+  #Standardize first Medical classifications to match 2017 factors, fix mis-spelling
   mutate(Coded_Medical_A = case_when(is.na(Coded_Medical_A) ~ "NA",
                                      Coded_Medical_A == "NMI" ~ "need more information",
                                      Coded_Medical_A == "CONDITIONAL TRUST" ~ "need more information",
@@ -108,6 +136,9 @@ clean11 <- gkap11 %>%
                                      Coded_Medical_A == 16 ~ "XX",
                                      Coded_Medical_A == 14 ~ "XX",
                                      TRUE ~ Coded_Medical_A)) %>%
+  
+  #Standardize first Medical classifications to match 2017 factors
+  #Note: Empty cells were not given factor value "NA" as in Coded_Medical_A and Coded_Legal because an empty Coded_Medical_B value simply means there was only one classification
   mutate(Coded_Medical_B = case_when(Coded_Medical_B == "NMI" ~ "need more information",
                                      Coded_Medical_B == "CONDITIONAL TRUST" ~ "need more information",
                                      Coded_Medical_B == "INTEREST-NO" ~ "interest",
@@ -131,24 +162,49 @@ clean11 <- gkap11 %>%
                                      Coded_Medical_B == 16 ~ "XX",
                                      Coded_Medical_B == 14 ~ "XX",
                                      TRUE ~ Coded_Medical_B))
-  
+
+
+#For later analysis of open-ended response classifications, tidy the Medical responses.
+#Save tidy dataframe to gather11
+#This dataframe is nearly identical to clean11. Coded_Medical_A and Coded_Medical_B are deleted. There is now a new column If there were two classifications given for one response, there are now two response entries for that one response that are duplicate, aside from their classification. Coded_Medical_AB labels whether the entry classification came from the column Coded_Medical_A or Coded_Medical_B. Coded_Medical labels the classification given. For example, there are two entries for CaseID 6 that are totally identical, except for in new columns Coded_Medical_AB and Coded_Medical. In the first entry, new Coded_Medical_AB labels that Coded_Medical_A had open-end the classification (found in Coded_Medical) "value" and that Coded_Medical_B had open-end classification "trust" (found in Coded_Medical)
+
 gather11 <- clean11 %>%
   gather(Coded_Medical_A, Coded_Medical_B, key = "Coded_Medical_AB", value = "Coded_Medical") %>%
   filter(!is.na(Coded_Medical)) %>%
   select(X1, CaseID, Response_Legal, OpenEnd_Legal, Coded_Legal, Response_Medical, OpenEnd_Medical, Coded_Medical_AB, Coded_Medical, weight1:pppa0012) %>%
   arrange(CaseID)
 
+#Save the clean11 dataframe and the gather11 dataframe as csv files
 clean11 %>% write_csv("GKAP2011_Clean.csv")
 gather11 %>% write_csv("GKAP2011_Split.csv")
 
 ```
 
 
-```{r data load and cleaning 2017}
+```{r Data load and Cleaning 2017, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Load GKAP2017_Agg.csv, a CSV containing the entire GKAP-2 (2017) survey AND the Open Ended Response Classifications (See columns 2-8; 3rd-9th columns for relevant Legal and Medical classification). Save as gkap17.
 
 gkap17 <- read_csv("GKAP2017_Agg.csv")
 
+#Columns added:
+##Response_Legal - Close-ended response to question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future investigations to determine a person’s guilt or innocence of a particular crime?"
+##OpenEnd_Legal - Follow-up open-ended response to Response_Legal question with "Why [would/wouldn't] you be willing to?"
+##Coded_Legal - The classification coded for the OpenEnd_Legal response
+##Response_Medical - Close-ended response to question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future scientific or medical research?"
+##OpenEnd_Medical - Follow-up open-ended response to Response_Medical question with "Why [would/wouldn't] you be willing to?"
+##Coded_Medical_A - The first classification coded for the OpenEnd_Medical response
+##Coded_Medical_B - The second classification coded for the OpenEnd_Medical response
+
+#Note: There is no difference in importance between Coded_Medical_A and Coded_Medical_B, and many responses were not given a second (Coded_Medical_B) classification. Additionally, there is no Coded_Legal_A/Coded_Legal_B because only one classification was given for each legal response
+
+
+#Clean GKAP2017 to contain consistent variables and factors standardized across both years.
+#Save cleaned dataframe as clean17.
+
 clean17 <- gkap17 %>%
+
+  #Standardize legal classifications to match Medical 2017 factors
   mutate(Coded_Legal = case_when(is.na(Coded_Legal) ~"NA",
                                  Coded_Legal == "Na" ~"NA",
                                  Coded_Legal == "na" ~"NA",
@@ -170,6 +226,8 @@ clean17 <- gkap17 %>%
                                  Coded_Legal == "value-y: research" ~ "research",
                                  Coded_Legal == "value-y: truth" ~ "truth",
                                  TRUE ~ Coded_Legal)) %>%
+  
+  #For empirical reasons, collapse "conditional trust" and "conditional mistrust" into the "need more information" factor
   mutate(Coded_Medical_A = case_when(is.na(Coded_Medical_A) ~ "NA",
                                  Coded_Medical_A == "conditional trust" ~ "need more information",
                                  Coded_Medical_A == "conditional mistrust" ~ "need more information",
@@ -178,99 +236,146 @@ clean17 <- gkap17 %>%
                                  Coded_Medical_B == "conditional mistrust" ~ "need more information",
                                  TRUE ~ Coded_Medical_B))
 
+
+#For later analysis of open-ended response classifications, tidy the Medical responses.
+#Save tidy dataframe to gather11
+#This dataframe is nearly identical to clean11. Coded_Medical_A and Coded_Medical_B are deleted. There is now a new column If there were two classifications given for one response, there are now two response entries for that one response that are duplicate, aside from their classification. Coded_Medical_AB labels whether the entry classification came from the column Coded_Medical_A or Coded_Medical_B. Coded_Medical labels the classification given. For example, there are two entries for CaseID 43 that are totally identical, except for in new columns Coded_Medical_AB and Coded_Medical. In the first entry, new Coded_Medical_AB labels that Coded_Medical_A had open-end the classification (found in Coded_Medical) "need more information" and that Coded_Medical_B had open-end classification "privacy" (found in Coded_Medical)
+
 gather17 <- clean17 %>%
   gather(Coded_Medical_A, Coded_Medical_B, key = "Coded_Medical_AB", value = "Coded_Medical") %>%
   filter(!is.na(Coded_Medical)) %>%
   select(X1, CaseID, Response_Legal, OpenEnd_Legal, Coded_Legal, Response_Medical, OpenEnd_Medical, Coded_Medical_AB, Coded_Medical, weight1:pppa1690) %>%
   arrange(CaseID)
 
+#Save the clean17 dataframe and the gather17 dataframe as csv files
 clean17 %>% write_csv("GKAP2017_Clean.csv")
 gather17 %>% write_csv("GKAP2017_Split.csv")
 
 ```
 
-```{r Summary}
+```{r Sample Size, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
 
-#How Many Respondents?
-
-respondents17 <- clean17 %>%
+#Count number of survey respondents in GKAP-2 (2017)
+respondents11 <- clean11 %>%
   summarize("Respondents" = n())
 
-respondents11 <- clean11 %>%
+#Count number of survey respondents in GKAP-2 (2017)
+respondents17 <- clean17 %>%
   summarize("Respondents" = n())
 
 ```
 
-##Summary
+##Questions
+
+
+####Legal
+
+* Close-ended Question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future investigations to determine a person’s guilt or innocence of a particular crime?"
+    + Willing
+    + Somewhat Willing
+    + Somewhat Unwilling
+    + Unwilling
+* Open-ended Question: "Why [would/wouldn't] you be willing to?"
+
+
+
+
+####Medical
+
+* Close-ended Question: "Would you be willing or unwilling to contribute a DNA sample, for example by a swab from your mouth, for use in current or future scientific or medical research?"
+    + Willing
+    + Somewhat Willing
+    + Somewhat Unwilling
+    + Unwilling
+* Open-ended Question: "Why [would/wouldn't] you be willing to?"
+
+
+##Topline Summary
 
 * Number of Respondents
     + 2011: `r respondents11`
     + 2017: `r respondents17`
 
 
-```{r Summary Favorability}
+```{r Topline Summary Favorability, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
 
-#LEGAL QUESTION 2017:
-#Would you be willing or unwilling to contribute a DNA sample, for example by a swab from
-#your mouth, for use in current or future investigations to determine a person’s guilt or
-#innocence of a particular crime?
-
-#MEDICAL QUESTION 2017:
-#Would you be willing or unwilling to contribute a DNA sample, for example by a swab from
-#your mouth, for use in current or future scientific or medical research?
+#Rename the numeric factors for the 2011 close-ended responses with their actual survey values
 
 cat11 <- clean11 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ "Willing",
-                                    Response_Legal == 2 ~ "Somewhat willing",
-                                    Response_Legal == 3 ~ "Somewhat unwilling",
+                                    Response_Legal == 2 ~ "Somewhat Willing",
+                                    Response_Legal == 3 ~ "Somewhat Unwilling",
                                     Response_Legal == 4 ~ "Unwilling",
                                     Response_Legal == -1 ~ "REFUSED")) %>%
   mutate(Response_Medical = case_when(Response_Medical == 1 ~ "Willing",
-                                    Response_Medical == 2 ~ "Somewhat willing",
-                                    Response_Medical == 3 ~ "Somewhat unwilling",
+                                    Response_Medical == 2 ~ "Somewhat Willing",
+                                    Response_Medical == 3 ~ "Somewhat Unwilling",
                                     Response_Medical == 4 ~ "Unwilling",
                                     Response_Medical == -1 ~ "REFUSED"))
 
-#LEGAL QUESTION 2017:
-#Would you be willing or unwilling to contribute a DNA sample, for example by a swab from
-#your mouth, for use in current or future investigations to determine a person’s guilt or
-#innocence of a particular crime?
 
-#MEDICAL QUESTION 2017:
-#Would you be willing or unwilling to contribute a DNA sample, for example by a swab from
-#your mouth, for use in current or future scientific or medical research?
+#Rename the numeric factors for the 2017 close-ended responses with their actual survey values
 
 cat17 <- clean17 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ "Willing",
-                                    Response_Legal == 2 ~ "Somewhat willing",
-                                    Response_Legal == 3 ~ "Somewhat unwilling",
+                                    Response_Legal == 2 ~ "Somewhat Willing",
+                                    Response_Legal == 3 ~ "Somewhat Unwilling",
                                     Response_Legal == 4 ~ "Unwilling",
                                     Response_Legal == -1 ~ "REFUSED")) %>%
   mutate(Response_Medical = case_when(Response_Medical == 1 ~ "Willing",
-                                    Response_Medical == 2 ~ "Somewhat willing",
-                                    Response_Medical == 3 ~ "Somewhat unwilling",
+                                    Response_Medical == 2 ~ "Somewhat Willing",
+                                    Response_Medical == 3 ~ "Somewhat Unwilling",
                                     Response_Medical == 4 ~ "Unwilling",
                                     Response_Medical == -1 ~ "REFUSED"))
 
+
+#Build bar graph for frequency of close-ended responses 2011
+
 cat11 %>%
   gather(Response_Legal, Response_Medical, key = "Type", value = "Favorability") %>%
+  mutate(Type = case_when(Type == "Response_Legal" ~ "Legal",
+                          Type == "Response_Medical" ~ "Medical")) %>%
   group_by(Type) %>%
   count(Favorability) %>%
-  mutate(Favorability = fct_relevel(Favorability, "Willing", "Somewhat willing", "Somewhat unwilling", "Unwilling", "REFUSED")) %>%
-  ggplot(aes(x = Favorability, y = n, fill = Type)) +
-  geom_col(position = "dodge") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  mutate(Favorability = fct_relevel(Favorability, "Willing", "Somewhat Willing", "Somewhat Unwilling", "Unwilling", "REFUSED")) %>%
+  ggplot(aes(x = Favorability, y = n)) +
+  geom_col(position = "dodge", color = "gray40", aes(fill = Type)) +
+  theme(axis.text.x = element_text(color = "black", size = 7),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0)) +
+  xlab("Close-Ended Response") +
+  ylab("Number of Respondents") +
+  labs(title = "Willingness to Contribute to a Biobank",
+       subtitle = "Frequency of Close-ended Responses (GKAP 2011)") +
+  guides(fill = guide_legend(title = "Biobank Type")) +
+  geom_label(aes(label = n, y = n / 2, fill = Type), size = 3.5, position = position_dodge(0.9))
+
+
+#Build bar graph for frequency of close-ended responses 2017
 
 cat17 %>%
   gather(Response_Legal, Response_Medical, key = "Type", value = "Favorability") %>%
+  mutate(Type = case_when(Type == "Response_Legal" ~ "Legal",
+                          Type == "Response_Medical" ~ "Medical")) %>%
   group_by(Type) %>%
   count(Favorability) %>%
-  mutate(Favorability = fct_relevel(Favorability, "Willing", "Somewhat willing", "Somewhat unwilling", "Unwilling", "REFUSED")) %>%
-  ggplot(aes(x = Favorability, y = n, fill = Type)) +
-  geom_col(position = "dodge") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  mutate(Favorability = fct_relevel(Favorability, "Willing", "Somewhat Willing", "Somewhat Unwilling", "Unwilling", "REFUSED")) %>%
+  ggplot(aes(x = Favorability, y = n)) +
+  geom_col(position = "dodge", color = "gray40", aes(fill = Type)) +
+  theme(axis.text.x = element_text(color = "black", size = 7),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0)) +
+  xlab("Close-Ended Response") +
+  ylab("Number of Respondents") +
+  labs(title = "Willingness to Contribute to a Biobank",
+       subtitle = "Frequency of Close-ended Responses (GKAP 2017)") +
+  guides(fill = guide_legend(title = "Biobank Type")) +
+  geom_label(aes(label = n, y = n / 2, fill = Type), size = 3.5, position = position_dodge(0.9))
 
-#Average Favorabilities
+
+#Rename the numeric factors for the 2011 close-ended responses to a quantitatively useful form. The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. 
 
 calc11 <- clean11 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ '3',
@@ -286,6 +391,7 @@ calc11 <- clean11 %>%
                                     Response_Medical == -1 ~ NA_character_)) %>%
   mutate(Response_Medical = parse_integer(Response_Medical))
   
+#Rename the numeric factors for the 2017 close-ended responses to a quantitatively useful form. The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. 
 
 calc17 <- clean17 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ '3',
@@ -301,49 +407,100 @@ calc17 <- clean17 %>%
                                     Response_Medical == -1 ~ NA_character_)) %>%
   mutate(Response_Medical = parse_integer(Response_Medical))
 
+#Find P-Value for later use
+p1_11 = t.test(calc11$Response_Legal, calc11$Response_Medical)$p.value
+
+#Create a bar graph of the average willingness to contribute to a biobank by type of biobank (GKAP 2011)
 calc11 %>%
   summarise(Legal_Favorability = mean(Response_Legal, na.rm = TRUE), 
             Medical_Favorability = mean(Response_Medical, na.rm = TRUE), 
+            samp_leg = length(Response_Legal[!is.na(Response_Legal)]),
             sd_leg = sd(Response_Legal, na.rm = TRUE),
-            se_leg = 1.96 * sd_leg/sqrt(n()),
+            se_leg = 1.96 * sd_leg/sqrt(samp_leg),
+            samp_med = length(Response_Medical[!is.na(Response_Medical)]),
             sd_med = sd(Response_Medical, na.rm = TRUE),
-            se_med = 1.96 * sd_med/sqrt(n())) %>%
+            se_med = 1.96 * sd_med/sqrt(samp_leg)) %>%
   gather(Legal_Favorability, Medical_Favorability, key = "Type", value = "Favorability") %>%
   mutate(se = ifelse(Type == "Legal_Favorability", se_leg, se_med)) %>%
   select(Type, Favorability, se) %>%
+  mutate(Type = case_when(Type == "Legal_Favorability" ~ "Legal",
+                          Type == "Medical_Favorability" ~ "Medical")) %>%
   ggplot(aes(x = Type, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
-  geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Med vs. Legal 2011", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_col(position = "dodge", fill = "lightblue2", color = "royalblue4", width = .7) +
+  geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width = .25) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  geom_label(aes(label = round(Favorability, 2), y = Favorability * 1.3), size = 5, position = position_dodge(0.9)) +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Biobank Type") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Biobank",
+       subtitle = "Average Willingness of Close-ended Responses by Type (GKAP 2011)",
+       caption = paste(
+"There was a significant difference between the average willingness to contribute to a medical versus legal biobank. 
+Respondents were more willing to contribute to a medical biobank. (p =", round(p1_11, 4), "< 0.05)",
+"
 
+The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Increasing numeric value indicates increased willingness to contribute to a biobank."))
+
+
+#Find P-Value for later use
+p1_17 = t.test(calc17$Response_Legal, calc17$Response_Medical)$p.value
+
+#Create a bar graph of the average willingness to contribute to a biobank by type of biobank (GKAP 2017)
 calc17 %>%
   summarise(Legal_Favorability = mean(Response_Legal, na.rm = TRUE), 
             Medical_Favorability = mean(Response_Medical, na.rm = TRUE), 
+            samp_leg = length(Response_Legal[!is.na(Response_Legal)]),
             sd_leg = sd(Response_Legal, na.rm = TRUE),
-            se_leg = 1.96 * sd_leg/sqrt(n()),
+            se_leg = 1.96 * sd_leg/sqrt(samp_leg),
+            samp_med = length(Response_Medical[!is.na(Response_Medical)]),
             sd_med = sd(Response_Medical, na.rm = TRUE),
-            se_med = 1.96 * sd_med/sqrt(n())) %>%
+            se_med = 1.96 * sd_med/sqrt(samp_leg)) %>%
   gather(Legal_Favorability, Medical_Favorability, key = "Type", value = "Favorability") %>%
   mutate(se = ifelse(Type == "Legal_Favorability", se_leg, se_med)) %>%
   select(Type, Favorability, se) %>%
+  mutate(Type = case_when(Type == "Legal_Favorability" ~ "Legal",
+                          Type == "Medical_Favorability" ~ "Medical")) %>%
   ggplot(aes(x = Type, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
-  geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Med vs. Legal 2017", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_col(position = "dodge", fill = "lightblue2", color = "royalblue4", width = .7) +
+  geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width = .25) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  geom_label(aes(label = round(Favorability, 2), y = Favorability * 1.3), size = 5, position = position_dodge(0.9)) +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Biobank Type") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Biobank",
+       subtitle = "Average Willingness of Close-ended Responses by Type (GKAP 2017)",
+       caption = paste(
+"There was a significant difference between the average willingness to contribute to a medical versus legal biobank. 
+Respondents were more willing to contribute to a medical biobank. (p =", round(p1_17, 4), "< 0.05)",
+"
+
+The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Increasing numeric value indicates increased willingness to contribute to a biobank."))
 
 
 
 calc11_2 <- calc11 %>%
   summarise(Legal_Favorability = mean(Response_Legal, na.rm = TRUE), 
             Medical_Favorability = mean(Response_Medical, na.rm = TRUE), 
+            samp_leg = length(Response_Legal[!is.na(Response_Legal)]),
             sd_leg = sd(Response_Legal, na.rm = TRUE),
-            se_leg = 1.96 * sd_leg/sqrt(n()),
+            se_leg = 1.96 * sd_leg/sqrt(samp_leg),
+            samp_med = length(Response_Medical[!is.na(Response_Medical)]),
             sd_med = sd(Response_Medical, na.rm = TRUE),
-            se_med = 1.96 * sd_med/sqrt(n())) %>%
+            se_med = 1.96 * sd_med/sqrt(samp_leg)) %>%
   gather(Legal_Favorability, Medical_Favorability, key = "Type", value = "Favorability") %>%
   mutate(se = ifelse(Type == "Legal_Favorability", se_leg, se_med), Year = '2011') %>%
   select(Type, Favorability, se, Year)
@@ -351,57 +508,105 @@ calc11_2 <- calc11 %>%
 calc17 %>%
   summarise(Legal_Favorability = mean(Response_Legal, na.rm = TRUE), 
             Medical_Favorability = mean(Response_Medical, na.rm = TRUE), 
+            samp_leg = length(Response_Legal[!is.na(Response_Legal)]),
             sd_leg = sd(Response_Legal, na.rm = TRUE),
-            se_leg = 1.96 * sd_leg/sqrt(n()),
+            se_leg = 1.96 * sd_leg/sqrt(samp_leg),
+            samp_med = length(Response_Medical[!is.na(Response_Medical)]),
             sd_med = sd(Response_Medical, na.rm = TRUE),
-            se_med = 1.96 * sd_med/sqrt(n())) %>%
+            se_med = 1.96 * sd_med/sqrt(samp_leg)) %>%
   gather(Legal_Favorability, Medical_Favorability, key = "Type", value = "Favorability") %>%
   mutate(se = ifelse(Type == "Legal_Favorability", se_leg, se_med), Year = '2017') %>%
   select(Type, Favorability, se, Year) %>%
   bind_rows(calc11_2) %>%
+  mutate(Type = case_when(Type == "Legal_Favorability" ~ "Legal",
+                          Type == "Medical_Favorability" ~ "Medical")) %>%
   ggplot(aes(x = Type, y = Favorability, fill = Year)) +
-  geom_col(position = "dodge") +
+  geom_col(position = "dodge", color = "gray40") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width= .9, position = "dodge") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Med vs. Legal 2011/2017", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
-  
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  geom_label(aes(label = round(Favorability, 2), y = Favorability * 1.3), size = 4, position = position_dodge(0.9)) +
+  theme(axis.text.x = element_text(color = "black", size = 12),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Biobank Type") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Biobank",
+       subtitle = "By Type, Across Years",
+       caption = 
+"There were not significant differences in willingness across years.
+
+The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Increasing numeric value indicates increased willingness to contribute to a biobank.")
 
 ```
 
-```{r Open End Analysis}
+
+
+
+
+##Open-Ended Analysis
+
+
+```{r Open End Analysis, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
 
 #Legal Open End Classifications
 
+#Add a Year column to cleaned dataset for future row binding (All contain factor 2011)
+#Select relevant columns
 leg11 <- clean11 %>%
   select(X1:Coded_Medical_B) %>%
   mutate(Year = '2011')
   
-
+#Add a Year column to cleaned dataset for future row binding (All contain factor 2017)
+#Select relevant columns
 leg17 <- clean17 %>% 
   select(X1:Coded_Medical_B) %>%
   mutate(Year = '2017')
 
+#Build bar graph showing relative frequency of each open-end classification given (2011)
+#Classifications of NA and XX are removed for this analysis because they are uninformative
 leg11 %>%
   bind_rows(leg17) %>%
   group_by(Year) %>%
   count(Coded_Legal) %>%
   filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
-  mutate(`Relative Frequency` = n/sum(n)) %>%
+  mutate(`Relative Frequency` = n/sum(n),
+         Coded_Legal = str_to_title(Coded_Legal)) %>%
   ggplot(aes(x = Coded_Legal, y = `Relative Frequency`, fill = Year)) +
-  geom_col(position = 'dodge') +
-  ylab("Relative Frequencies") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Frequency of Open-Ended Response Classifications (ADJUSTED)")
+  geom_col(position = 'dodge', color = "gray25") +
+  ylab("Relative Frequency") +
+  xlab("Legal Response Classification") +
+  theme(axis.text.x = element_text(color = "black", size = 8, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title ="Relative Frequency of Open-Ended Response Classifications",
+       subtitle = "Reasoning for contributing to Legal Biobank",
+       caption = 
+"After answering how willing respondent would be to contribute to a biobank, the respondents were asked the follow-up open-end 
+question: \"Why [would/wouldn't] you be willing to?\" These responses were classified by hand to differentiate types of responses. 
+The classifications 'XX' (Unintelligible) and 'NA' (No Answer) were not included in this analysis because they are largely
+uninformative. The proportion of a classification out of total informative classifications is given by the Relative Frequency above. 
+The frequency of classifications coded are largely consistent across years")
+
 
 
 #Medical Open End Classifications
 
+#Add a Year column to split/gathered dataset for future row binding (All contain factor 2011)
+#Split/gathered dataset used to account for Medical responses given two classifications. For responses with two classifications, each is counted independently.
+#Select relevant columns
 label11 <- gather11 %>%
   select(X1:Coded_Medical) %>%
   mutate(Year = '2011')
   
-
+#Add a Year column to split/gathered dataset for future row binding (All contain factor 2017)
+#Split/gathered dataset used to account for Medical responses given two classifications. For responses with two classifications, each is counted independently.
+#Select relevant columns
 label17 <- gather17 %>% 
   select(X1:Coded_Medical) %>%
   mutate(Year = '2017')
@@ -411,42 +616,94 @@ label11 %>%
   group_by(Year) %>%
   count(Coded_Medical) %>%
   filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
-  mutate(`Relative Frequency` = n/sum(n)) %>%
+  mutate(`Relative Frequency` = n/sum(n),
+         Coded_Medical = str_to_title(Coded_Medical)) %>%
   ggplot(aes(x = Coded_Medical, y = `Relative Frequency`, fill = Year)) +
-  geom_col(position = 'dodge') +
-  ylab("Relative Frequencies") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Frequency of Open-Ended Response Classifications (ADJUSTED)")
+  geom_col(position = 'dodge', color = "gray25") +
+  ylab("Relative Frequency") +
+  xlab("Medical Response Classification") +
+  theme(axis.text.x = element_text(color = "black", size = 8, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title ="Relative Frequency of Open-Ended Response Classifications",
+       subtitle = "Reasoning for contributing to Medical Biobank",
+       caption = 
+"After answering how willing respondent would be to contribute to a biobank, the respondents were asked the follow-up open-end 
+question: \"Why [would/wouldn't] you be willing to?\" These responses were classified by hand to differentiate types of responses. 
+The classifications 'XX' (Unintelligible) and 'NA' (No Answer) were not included in this analysis because they are largely
+uninformative. The proportion of a classification out of total informative classifications is given by the Relative Frequency above. 
+The frequency of classifications coded are largely consistent across years. 'Indeterminate Unwilling' and 'Indeterminate Willing'
+were not used in 2011 coding. There does seem to be a deviation in the Value/Medical Cure/Scientific Knowledge classes
+This is likely due to differences in researcher coding, as 'Medical Cure' and 'Scienfic Knowledge' are subsets of 'Value'.")
 
 
-#Average Favorability by Class
 
+
+#Average Willingness by Open-end Response Reasoning Classification
+
+#Build bar graph with Average Willingness by Open-end Response Reasoning Classification (Legal, 2011)
 calc11 %>%
   filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
+  mutate(Coded_Legal = str_to_title(Coded_Legal)) %>%
   group_by(Coded_Legal) %>%
   summarise(Favorability = mean(Response_Legal, na.rm = TRUE), 
             sd = sd(Response_Legal, na.rm = TRUE),
-            se = 1.96 * sd/sqrt(n())) %>%
+            samp = length(Response_Legal[!is.na(Response_Legal)]),
+            se = 1.96 * sd/sqrt(samp)) %>%
   ggplot(aes(x = Coded_Legal, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
+  geom_col(position = "dodge", fill = "royalblue4", color = "gray70") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Legal 2011", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 7, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Open-end Response Classification") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Reasoning Classification (GKAP 2011)",
+       caption = 
+"The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. Classifications
+used to code were not consistent across years or biobank type. One can see many statistically significant differences
+in favorability across classification.")
 
+#Build bar graph with Average Willingness by Open-end Response Reasoning Classification (Legal, 2017)
 calc17 %>%
   filter(Coded_Legal != "NA", Coded_Legal != "XX") %>%
+  mutate(Coded_Legal = str_to_title(Coded_Legal)) %>%
   group_by(Coded_Legal) %>%
   summarise(Favorability = mean(Response_Legal, na.rm = TRUE), 
             sd = sd(Response_Legal, na.rm = TRUE),
-            se = 1.96 * sd/sqrt(n())) %>%
+            samp = length(Response_Legal[!is.na(Response_Legal)]),
+            se = 1.96 * sd/sqrt(samp)) %>%
   ggplot(aes(x = Coded_Legal, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
+  geom_col(position = "dodge", fill = "royalblue4", color = "gray70") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Legal 2017", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 7, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Open-end Response Classification") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Reasoning Classification (GKAP 2017)",
+       caption = 
+"The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. Classifications
+used to code were not consistent across years or biobank type. One can see many statistically significant differences
+in favorability across classification.")
 
+
+#Rename the numeric factors for the 2011 close-ended responses to a quantitatively useful form. The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank.
+#Split/gathered dataset used to account for Medical responses given two classifications. For responses with two classifications, each is counted independently.
 
 gather11_2 <- gather11 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ '3',
@@ -462,6 +719,10 @@ gather11_2 <- gather11 %>%
                                     Response_Medical == -1 ~ NA_character_)) %>%
   mutate(Response_Medical = parse_integer(Response_Medical))
 
+
+#Rename the numeric factors for the 2011 close-ended responses to a quantitatively useful form. The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank.
+#Split/gathered dataset used to account for Medical responses given two classifications. For responses with two classifications, each is counted independently.
+
 gather17_2 <- gather17 %>%
   mutate(Response_Legal = case_when(Response_Legal == 1 ~ '3',
                                     Response_Legal == 2 ~ '2',
@@ -476,239 +737,376 @@ gather17_2 <- gather17 %>%
                                     Response_Medical == -1 ~ NA_character_)) %>%
   mutate(Response_Medical = parse_integer(Response_Medical))
 
+
+#Build bar graph with Average Willingness by Open-end Response Reasoning Classification (Medical, 2011)
 gather11_2 %>%
   filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
+  mutate(Coded_Medical = str_to_title(Coded_Medical)) %>%
   group_by(Coded_Medical) %>%
   summarise(Favorability = mean(Response_Medical, na.rm = TRUE), 
             sd = sd(Response_Medical, na.rm = TRUE),
-            se = 1.96 * sd/sqrt(n())) %>%
+            samp = length(Response_Medical[!is.na(Response_Medical)]),
+            se = 1.96 * sd/sqrt(samp)) %>%
   ggplot(aes(x = Coded_Medical, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
+  geom_col(position = "dodge", fill = "royalblue4", color = "gray70") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Medical 2011", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Open-end Response Classification") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Reasoning Classification (GKAP 2011)",
+       caption = 
+"The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. Classifications
+used to code were not consistent across years or biobank type. One can see many statistically significant differences
+in favorability across classification.")
 
+#Build bar graph with Average Willingness by Open-end Response Reasoning Classification (Medical, 2017)
 gather17_2 %>%
   filter(Coded_Medical != "NA", Coded_Medical != "XX") %>%
+  mutate(Coded_Medical = str_to_title(Coded_Medical)) %>%
   group_by(Coded_Medical) %>%
   summarise(Favorability = mean(Response_Medical, na.rm = TRUE), 
             sd = sd(Response_Medical, na.rm = TRUE),
-            se = 1.96 * sd/sqrt(n())) %>%
+            samp = length(Response_Medical[!is.na(Response_Medical)]),
+            se = 1.96 * sd/sqrt(samp)) %>%
   ggplot(aes(x = Coded_Medical, y = Favorability)) +
-  geom_col(position = "dodge", fill = "royalblue4") +
+  geom_col(position = "dodge", fill = "royalblue4", color = "gray70") +
   geom_errorbar(aes(ymin = Favorability - se, ymax = Favorability + se), width=.4) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Favorability Score Medical 2017", caption = "CAPTION CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
-
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  xlab("Open-end Response Classification") +
+  ylab("Average Willingness") +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Reasoning Classification (GKAP 2017)",
+       caption = 
+"The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response 
+numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, 
+Willing = 3. Thus, increasing numeric value indicates increased willingness to contribute to a biobank. Classifications
+used to code were not consistent across years or biobank type. One can see many statistically significant differences
+in favorability across classification.")
 
 ```
 
 
-```{r Build Aggregate Dataset}
+```{r Build Aggregate Dataset, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
 
+#For further analysis, I will be using an aggregated dataset, combining the 2011 and 2017 data
+#This aggregated dataset is built below
+
+#2011 dataset prepared
+#A column for 2011 with the Year indexed is added
+#The `party` column is adjusted to match 2017 because of differences in survey
+#All column names are fully capitalized for consistency with 2017
 agg11 <- calc11 %>%
   mutate(Year = '2011') %>%
   mutate(party = pppa0012) %>%
   rename_all(toupper)
-  
+
+#2017 dataset prepared and bound to prepared 2011 dataset
+#A column for 2017 with the Year indexed is added
+#The `party` column is adjusted to match 2011 because of differences in survey
+#All column names are fully capitalized for consistency with 2011
+#The two datasets are bound for analysis to one aggregated dataset (agg)
 agg <- calc17 %>% 
   mutate(Year = '2017') %>%
   mutate(party = ppp10012) %>%
   rename_all(toupper) %>%
   bind_rows(agg11)
 
-agg %>% select()
-
 ```
 
 
-```{r POLITICS}
-#Average Favorability Score by Political Ideology
+
+
+##Close-Ended Analysis
+
+
+Note: The close-ended responses are ordinal variables ranging in willingness to contribute to a biobank. Now, the response numeric value will align to the following ordinal schema: Unwilling = 0, Somewhat Unwilling = 1, Somewhat Willing = 2, Willing = 3. Increasing numeric value indicates increased willingness to contribute to a biobank.
+
+
+
+
+The following figures show differences in willingness across different demographics.
+
+
+
+
+###Politics
+
+
+```{r POLITICS, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+#Average Willingness Score by Political Ideology
 
 #MEDICAL
 agg %>%
   filter(!is.na(RESPONSE_MEDICAL)) %>%
   filter(PARTY != -1, PARTY != -2) %>%
-  mutate(PARTY = case_when(PARTY == 1 ~ "1 - Extremely Liberal", 
-                           PARTY == 7 ~ "7 - Extremely Conservative",
-                           TRUE ~ as.character(PARTY))) %>%
+  mutate(PARTY = as.character(PARTY)) %>%
   group_by(PARTY, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PARTY, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PARTY, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Political Ideology", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.title.x = element_text(size = 9)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Political Ideology",
+       caption = 
+"Respondents rated themselves on a scale (1-7) where 1 was 'Extremely Liberal' and 7 was 'Extremely Conservative'.
+
+In both years, those more self-identifying as liberals were significantly more willing to contribute to a medical biobank 
+than self-identifying conservatives") +
+  ylab("Average Willingness") +
+  xlab("Liberal                                                       Conservative       Liberal                                                        Conservative")
 
 #LEGAL
 agg %>%
   filter(!is.na(RESPONSE_LEGAL)) %>%
   filter(PARTY != -1, PARTY != -2) %>%
-  mutate(PARTY = case_when(PARTY == 1 ~ "1 - Extremely Liberal", 
-                           PARTY == 7 ~ "7 - Extremely Conservative",
-                           TRUE ~ as.character(PARTY))) %>%
+  mutate(PARTY = as.character(PARTY)) %>%
   group_by(PARTY, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PARTY, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PARTY, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Political Ideology", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.title.x = element_text(size = 9)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Political Ideology",
+       caption = 
+"Respondents rated themselves on a scale (1-7) where 1 was 'Extremely Liberal' and 7 was 'Extremely Conservative'.
+
+No significant effects were found for willingness to contribute to legal biobanks.") +
+  ylab("Average Willingness") +
+  xlab("Liberal                                                       Conservative       Liberal                                                        Conservative")
 
 
-#Average Favorability Score by Party ID
+#Average Willingness Score by Party ID
 
 #MEDICAL
 agg %>%
   filter(!is.na(RESPONSE_MEDICAL)) %>%
   filter(PARTYID7 != -1, PARTYID7 != -2) %>%
-  mutate(PARTYID7 = case_when(PARTYID7 == 1 ~ "1 - Strongly Republican", 
-                           PARTYID7 == 7 ~ "7 - Strongly Democrat",
-                           TRUE ~ as.character(PARTYID7))) %>%
+  mutate(PARTYID7 = as.character(PARTYID7)) %>%
   group_by(PARTYID7, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PARTYID7, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PARTYID7, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Party ID", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.title.x = element_text(size = 9)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Party Identification",
+       caption = 
+"Respondents rated themselves on a scale (1-7) where 1 was 'Strong Republican' and 7 was 'Strong Democrat'.
+
+No significant effects were found for willingness to contribute to medical biobanks. (No 2011 Data Available)") +
+  ylab("Average Willingness") +
+  xlab("Democrat                                                                                                                                        Republican")
 
 #LEGAL
 agg %>%
   filter(!is.na(RESPONSE_LEGAL)) %>%
   filter(PARTYID7 != -1, PARTYID7 != -2) %>%
-  mutate(PARTYID7 = case_when(PARTYID7 == 1 ~ "1 - Strongly Republican", 
-                           PARTYID7 == 7 ~ "7 - Strongly Democrat",
-                           TRUE ~ as.character(PARTYID7))) %>%
+  mutate(PARTYID7 = as.character(PARTYID7)) %>%
   group_by(PARTYID7, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PARTYID7, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PARTYID7, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Party ID", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.title.x = element_text(size = 9)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Party Identification",
+       caption = 
+"Respondents rated themselves on a scale (1-7) where 1 was 'Strong Republican' and 7 was 'Strong Democrat'.
 
-
-#Average Favorability Score by Candidate
-
-#MEDICAL 2017
-agg %>%
-  filter(!is.na(RESPONSE_MEDICAL)) %>%
-  filter(PPPA1690 %in% c(1, 2)) %>%
-  mutate(PPPA1690 = case_when(PPPA1690 == 1 ~ "Clinton", 
-                           PPPA1690 == 2 ~ "Trump")) %>%
-  group_by(PPPA1690, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPPA1690, y = `Average Favorability`)) +
-  geom_col() +
-  facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Candidate 2017", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
-
-#LEGAL 2017
-agg %>%
-  filter(!is.na(RESPONSE_LEGAL)) %>%
-  filter(PPPA1690 %in% c(1, 2)) %>%
-  mutate(PPPA1690 = case_when(PPPA1690 == 1 ~ "Clinton", 
-                           PPPA1690 == 2 ~ "Trump")) %>%
-  group_by(PPPA1690, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPPA1690, y = `Average Favorability`)) +
-  geom_col() +
-  facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Candidate 2017", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+No significant effects were found for willingness to contribute to legal biobanks. (No 2011 Data Available)") +
+  ylab("Average Willingness") +
+  xlab("Democrat                                                                                                                                        Republican")
 
 ```
 
-```{r RACE/ETHNICITY}
 
-#Average Favorability Score by Race/Ethnicity
+
+###Race/Ethnicity
+
+
+```{r RACE/ETHNICITY, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Average Willingness Score by Race/Ethnicity
 
 #MEDICAL
 agg %>%
   filter(!is.na(RESPONSE_MEDICAL)) %>%
-  mutate(PPETHM = case_when(PPETHM == 1 ~ "White, Non-Hispanic", 
-                            PPETHM == 2 ~ "Black, Non-Hispanic", 
-                            PPETHM == 3 ~ "Other, Non-Hispanic", 
+  mutate(PPETHM = case_when(PPETHM == 1 ~ "White", 
+                            PPETHM == 2 ~ "Black", 
+                            PPETHM == 3 ~ "Other", 
                             PPETHM == 4 ~ "Hispanic",
-                            PPETHM == 5 ~ "2+ Races, Non-Hispanic")) %>%
+                            PPETHM == 5 ~ "2+ Races")) %>%
+  mutate(PPETHM = fct_relevel(PPETHM, "White", "Black", "Hispanic", "2+ Races", "Other")) %>%
   group_by(PPETHM, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPETHM, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPETHM, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Ethnicity", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Race/Ethnicity",
+       caption = 
+"Respondents identified their Race/Ethnicity by the labels included. Following each label other than 'Hispanic' was a 
+clarification of 'non-Hispanic'. Therefore, all labels are mutually exclusive. In 2017, there were no '2+ races' responses.
+
+Several significant effects can be found above. In 2011, those identifying as 'Black' were significantly less willing to 
+contribute to a medical biobank than any other label. In 2017, those identifying as 'Black' were significantly less 
+willing to contribute to a medical biobank than those identifying as 'White'. In 2011, those identifying as 'Hispanic' were
+significantly more willing to contribute to a medical biobank than those identifying as 'White'.") +
+  ylab("Average Willingness") +
+  xlab("Race/Ethnicity")
 
 #LEGAL
 agg %>%
   filter(!is.na(RESPONSE_LEGAL)) %>%
-  mutate(PPETHM = case_when(PPETHM == 1 ~ "White, Non-Hispanic", 
-                            PPETHM == 2 ~ "Black, Non-Hispanic", 
-                            PPETHM == 3 ~ "Other, Non-Hispanic", 
+  mutate(PPETHM = case_when(PPETHM == 1 ~ "White", 
+                            PPETHM == 2 ~ "Black", 
+                            PPETHM == 3 ~ "Other", 
                             PPETHM == 4 ~ "Hispanic",
-                            PPETHM == 5 ~ "2+ Races, Non-Hispanic")) %>%
+                            PPETHM == 5 ~ "2+ Races")) %>%
+  mutate(PPETHM = fct_relevel(PPETHM, "White", "Black", "Hispanic", "2+ Races", "Other")) %>%
   group_by(PPETHM, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPETHM, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPETHM, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Ethnicity", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Race/Ethnicity",
+       caption = 
+"Respondents identified their Race/Ethnicity by the labels included. Following each label other than 'Hispanic' was a 
+clarification of 'non-Hispanic'. Therefore, all labels are mutually exclusive. In 2017, there were no '2+ races' responses.
+
+Several significant effects can be found above. In 2011 and 2017, those identifying as 'Black' were significantly less willing to 
+contribute to a legal biobank than any other label.") +
+  ylab("Average Willingness") +
+  xlab("Race/Ethnicity")
 
 ```
 
-```{r AGE}
 
-#Average Favorability Score by AGE
+
+###Age
+
+
+```{r AGE, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Average Willingness Score by AGE
 
 #MEDICAL
 agg %>%
   filter(!is.na(RESPONSE_MEDICAL)) %>%
-  ggplot(aes(x = PPAGE, y = RESPONSE_LEGAL)) +
-  geom_jitter(alpha = .8) +
-  geom_smooth(method = 'lm', se = FALSE) +
-  geom_smooth(aes(color = "red")) +
+  ggplot(aes(x = PPAGE, y = RESPONSE_MEDICAL)) +
+  geom_jitter(alpha = .6, height = .1, color = "gray17") +
+  geom_smooth(method = 'lm', se = FALSE, color = "blue") +
+  geom_smooth(color = "red") +
   facet_grid(~YEAR) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Age", caption = "") +
-  ylab("Average Favorability") +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Age",
+       caption = 
+"Respondents identified their integer age. Graphed is a scatterplot of willingness to contribute to a biobank on age. Again, a higher
+value translates to a higher willingness. All respondents input an exact ordinal value, so they are coded only as exact integer
+values (0, 1, 2, or 3). 
+
+In both years, one can see a modest parabolic, though overall increasing trend in medical biobank willingness with increasing age") +
+  ylab("Willingness") +
   xlab("Age")
 
 #LEGAL
 agg %>%
   filter(!is.na(RESPONSE_LEGAL)) %>%
   ggplot(aes(x = PPAGE, y = RESPONSE_LEGAL)) +
-  geom_jitter(alpha = .8) +
-  geom_smooth(method = 'lm', se = FALSE) +
-  geom_smooth(aes(color = "red")) +
+  geom_jitter(alpha = .6, height = .1, color = "gray17") +
+  geom_smooth(method = 'lm', se = FALSE, color = "blue") +
+  geom_smooth(color = "red") +
   facet_grid(~YEAR) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Age", caption = "") +
-  ylab("Average Favorability") +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Age",
+       caption = 
+"Respondents identified their integer age. Graphed is a scatterplot of willingness to contribute to a biobank on age. Again, a higher
+value translates to a higher willingness. All respondents input an exact ordinal value, so they are coded only as exact integer
+values (0, 1, 2, or 3). 
+
+In both years, one can see a modest parabolic, though overall increasing trend in legal biobank willingness with increasing age") +
+  ylab("Willingness") +
   xlab("Age")
 
 
-#Average Favorability Score by Age
+
+#Average Willingness Score by Age
 
 #MEDICAL
 agg %>%
@@ -721,14 +1119,29 @@ agg %>%
                            PPAGECAT == 6 ~ "65-74",
                            PPAGECAT == 7 ~ "75+")) %>%
   group_by(PPAGECAT, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPAGECAT, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPAGECAT, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Age", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Age Group",
+       caption = 
+"Respondents qualified their age group into the indicated categories.
+
+In both years, those aged 75+ were significantly more willing to contribute to a medical biobank than those aged 
+25-34, 35-44, and 45-54 (In 2017, also 55-64).") +
+  ylab("Average Willingness") +
+  xlab("Age Group")
 
 #LEGAL
 agg %>%
@@ -741,21 +1154,41 @@ agg %>%
                            PPAGECAT == 6 ~ "65-74",
                            PPAGECAT == 7 ~ "75+")) %>%
   group_by(PPAGECAT, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPAGECAT, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPAGECAT, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Age", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Age Group",
+       caption = 
+"Respondents qualified their age group into the indicated categories.
+
+In 2011, those aged 75+ were significantly more willing to contribute to a medical biobank than those aged 35-44 and 45-54.
+In 2017, those aged 75+ were significantly more willing to contribute to a medical biobank than those aged 45-54, 55-64, and 65-74.") +
+  ylab("Average Willingness") +
+  xlab("Age Group")
 
 
 ```
 
-```{r GENDER}
 
-#Average Favorability Score by GENDER
+
+###Gender
+
+
+```{r GENDER, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Average Willingness Score by GENDER
 
 #MEDICAL
 agg %>%
@@ -763,14 +1196,28 @@ agg %>%
   mutate(PPGENDER = case_when(PPGENDER == 1 ~ "Male", 
                            PPGENDER == 2 ~ "Female")) %>%
   group_by(PPGENDER, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPGENDER, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPGENDER, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Gender", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Gender",
+       caption = 
+"All respondents labelled themselves as either Male or Female.
+
+No significant differences in willingness to contribute to a medical biobank were identified.") +
+  ylab("Average Willingness") +
+  xlab("Gender")
 
 #LEGAL
 agg %>%
@@ -778,20 +1225,39 @@ agg %>%
   mutate(PPGENDER = case_when(PPGENDER == 1 ~ "Male", 
                            PPGENDER == 2 ~ "Female")) %>%
   group_by(PPGENDER, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPGENDER, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPGENDER, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Gender", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Gender",
+       caption = 
+"All respondents labelled themselves as either Male or Female.
+
+No significant differences in willingness to contribute to a medical biobank were identified.") +
+  ylab("Average Willingness") +
+  xlab("Gender")
 
 ```
 
-```{r INCOME}
 
-#Average Favorability Score by INCOME
+
+###Income
+
+
+```{r INCOME, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Average Willingness Score by INCOME
 
 #MEDICAL
 agg %>%
@@ -837,14 +1303,29 @@ agg %>%
                                           '$150,000 to $174,999',
                                           '$175,000 to $199,999')) %>%
   group_by(PPINCIMP, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPINCIMP, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPINCIMP, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "royalblue4", color = "royalblue4") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Income", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, hjust = 1, angle = 90),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Income Level",
+       caption = 
+"All respondents qualified their household income among the indicated ranges.
+
+There does not seem to be a significant trend in 2011. In 2017, there is suggestion of a positive trend between higher 
+income and increased willingness to contribute to a medical biobank.") +
+  ylab("Average Willingness") +
+  xlab("Income Level")
 
 #LEGAL
 agg %>%
@@ -890,65 +1371,40 @@ agg %>%
                                           '$150,000 to $174,999',
                                           '$175,000 to $199,999')) %>%
   group_by(PPINCIMP, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPINCIMP, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPINCIMP, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "royalblue4", color = "royalblue4") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Income", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, hjust = 1, angle = 90),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Income Level",
+       caption = 
+"All respondents qualified their household income among the indicated ranges.
+
+There does not seem to be a significant trend between income level and willingness to
+contribute to a legal biobank either year.") +
+  ylab("Average Willingness") +
+  xlab("Income Level")
 
 ```
 
 
-```{r EDUCATION}
 
-#Average Favorability Score by EDUCATION
-
-#MEDICAL
-agg %>%
-  filter(!is.na(RESPONSE_MEDICAL)) %>%
-  mutate(PPEDUCAT = case_when(PPEDUCAT == 1 ~ "Less than High School", 
-                           PPEDUCAT == 2 ~ "High School", 
-                           PPEDUCAT == 3 ~ "Some College",
-                           PPEDUCAT == 4 ~ "Bachelor's Degree or Higher")) %>%
-  mutate(PPEDUCAT = fct_relevel(PPEDUCAT, "Less than High School", 
-                                          "High School", 
-                                          "Some College",
-                                          "Bachelor's Degree or Higher")) %>%
-  group_by(PPEDUCAT, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPEDUCAT, y = `Average Favorability`)) +
-  geom_col() +
-  facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Education", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
-
-#LEGAL
-agg %>%
-  filter(!is.na(RESPONSE_LEGAL)) %>%
-  mutate(PPEDUCAT = case_when(PPEDUCAT == 1 ~ "Less than High School", 
-                           PPEDUCAT == 2 ~ "High School", 
-                           PPEDUCAT == 3 ~ "Some College",
-                           PPEDUCAT == 4 ~ "Bachelor's Degree or Higher")) %>%
-  mutate(PPEDUCAT = fct_relevel(PPEDUCAT, "Less than High School", 
-                                          "High School", 
-                                          "Some College",
-                                          "Bachelor's Degree or Higher")) %>%
-  group_by(PPEDUCAT, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPEDUCAT, y = `Average Favorability`)) +
-  geom_col() +
-  facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Education", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+###Education
 
 
+```{r EDUCATION, echo = FALSE, output = FALSE, message = FALSE, warning = FALSE}
+
+#Average Willingness Score by EDUCATION
 
 #MEDICAL
 agg %>%
@@ -961,14 +1417,29 @@ agg %>%
                            PPEDUC == 13 ~ "6 - Master's Degree",
                            PPEDUC == 14 ~ "7 - Professional Degree")) %>%
   group_by(PPEDUC, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_MEDICAL), sd = sd(RESPONSE_MEDICAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPEDUC, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_MEDICAL),
+            samp = length(RESPONSE_MEDICAL[!is.na(RESPONSE_MEDICAL)]),
+            sd = sd(RESPONSE_MEDICAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPEDUC, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Medical Favorability Score by Education", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, hjust = 1, angle = 90),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Medical Biobank",
+       subtitle = "By Education Level",
+       caption = 
+"All respondents qualified their highest education level by the indicated levels.
+
+There does not seem to be a significant trend between educational attainment and willingness
+to contribute to a medical biobank either year.") +
+  ylab("Average Willingness") +
+  xlab("Education Level")
 
 #LEGAL
 agg %>%
@@ -981,14 +1452,29 @@ agg %>%
                            PPEDUC == 13 ~ "6 - Master's Degree",
                            PPEDUC == 14 ~ "7 - Professional Degree")) %>%
   group_by(PPEDUC, YEAR) %>%
-  summarise(`Average Favorability` = mean(RESPONSE_LEGAL), sd = sd(RESPONSE_LEGAL), se = 1.96 * sd/sqrt(n())) %>%
-  ggplot(aes(x = PPEDUC, y = `Average Favorability`)) +
-  geom_col() +
+  summarise(`Average Willingness` = mean(RESPONSE_LEGAL),
+            samp = length(RESPONSE_LEGAL[!is.na(RESPONSE_LEGAL)]),
+            sd = sd(RESPONSE_LEGAL), 
+            se = 1.96 * sd/sqrt(samp)) %>%
+  ggplot(aes(x = PPEDUC, y = `Average Willingness`)) +
+  geom_col(position = "dodge", fill = "skyblue4", color = "royalblue") +
   facet_grid(~YEAR) +
-  geom_errorbar(aes(ymin = `Average Favorability`- se, ymax = `Average Favorability` + se), width=.2, position=position_dodge(.9)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(title = "Average Legal Favorability Score by Education", caption = "CAPTION CAPTION") +
-  scale_y_continuous(name = "Average Favorability", limits = c(0, 3), breaks = seq(0, 3, length.out = 7))
+  geom_errorbar(aes(ymin = `Average Willingness`- se, ymax = `Average Willingness` + se), width=.2, position=position_dodge(.9)) +
+  scale_y_continuous(name = "Average Willingness", limits = c(0, 3), breaks = seq(0, 3, length.out = 7)) +
+  theme(axis.text.x = element_text(color = "black", size = 8, hjust = 1, angle = 90),
+        plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0, size = 8),
+        panel.border = element_rect(color = "black", fill = NA)) +
+  labs(title = "Willingness to Contribute to a Legal Biobank",
+       subtitle = "By Education Level",
+       caption = 
+"All respondents qualified their highest education level by the indicated levels.
+
+There does not seem to be a significant trend between educational attainment and willingness
+to contribute to a legal biobank either year.") +
+  ylab("Average Willingness") +
+  xlab("Education Level")
 
 ```
 
